@@ -1,0 +1,169 @@
+---
+title: "Machine Learning - Prediction Assignment Writeup"
+author: "Koti"
+date: "September 27, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+# Overview
+Personal activity related data can be collected using various devices. A group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior. The main goal of the project is to predict the manner in which these participants performed some exercise.
+
+# Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Sincere thanks to authors (Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H) for being so generous in allowing their data to be used.
+
+# Analysis
+
+## Libraries required
+Load required libraries to do the analysis
+```{r echo=TRUE,message=FALSE, warning=FALSE}
+library(caret)
+library(rpart)
+library(randomForest)
+```
+
+##Load data
+Files pml-training.csv and pml-testing.csv downloaded from  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv , https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r}
+urlTrain <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#download.file(urlTrain,"pml-training.csv")
+#download.file(urlTest,"pml-testing.csv")
+
+pmltrain<-read.csv("pml-training.csv")
+test<-read.csv("pml-testing.csv")
+#check the variables
+str(pmltrain)
+```
+
+### Clean data
+Remove Id variables, NearZeroVariance and variables which has lot of NAs.
+
+#### Remove id variables
+```{r}
+pmltrain<-pmltrain[,-c(1,2,3,4,5)]
+test<-test[,-c(1,2,3,4,5)]
+```
+#### Remove variables with Nearly Zero Variance
+```{r}
+nzv <- nearZeroVar(pmltrain)
+trainnzv <- pmltrain[, -nzv]
+testnzv<-test[,-nzv]
+```
+#### Remove mostNAs
+```{r}
+mostNA    <- sapply(trainnzv, function(x) mean(is.na(x))) > 0.90
+trainCleaned<-trainnzv[,which(mostNA==0)]
+testing<-testnzv[,which(mostNA==0)]
+str(testing)
+```
+
+Devide data to training and cross validation data
+```{r}
+set.seed(22519)
+inTrain<-createDataPartition(trainCleaned$classe,p=0.7, list=FALSE)
+training<-trainCleaned[inTrain,]
+crosstesting<-trainCleaned[-inTrain,]
+rm(trainCleaned)
+rm(testnzv)
+rm(pmltrain)
+dim(training)
+```
+```{r}
+dim(crosstesting)
+```
+
+## Model Building
+
+Build with model with different methods to find the accuracy and to get the best predicted model.
+Following three methods are used Random Forest, Decision Trees and Generalized Boosted Model.
+
+### Random Forest
+```{r}
+#modRF<-randomForest(classe ~. , data=training)
+modRF<-train(classe~.,data=training,method="rf", trControl=trainControl(method='cv'), number=5,allowParallel=TRUE )
+#modRF$finalModel
+```
+Predict using cross validation dataset
+```{r}
+predRF<-predict(modRF,crosstesting)
+confRF <- confusionMatrix(predRF, crosstesting$classe)
+confRF
+```
+## Decision Trees
+```{r}
+modDT<-train(classe~.,data=training,method="rpart")
+#modDT$finalModel
+```
+Predict using testing dataset
+```{r}
+predDT<-predict(modDT,crosstesting)
+confDT<-confusionMatrix(predDT,crosstesting$classe)
+confDT
+```
+## Generalized Boosted Model
+```{r message=FALSE, warning=FALSE}
+modGBM<-suppressMessages(train(classe~.,data=training,method="gbm"))
+```
+Predict using testing dataset
+```{r}
+predGBM<-predict(modGBM,crosstesting)
+confGBM<-confusionMatrix(predGBM,crosstesting$classe)
+confGBM
+```
+
+Accuracy and out of sample error values for test dataset using model random forest
+```{r}
+accuracyRF <- postResample(predRF, crosstesting$classe)
+accuracyRF
+```
+Out of sample error
+```{r}
+ooseRF <- 1 - as.numeric(confRF$overall[1])
+ooseRF
+```
+Accuracy and out of sample error values for test dataset using model decision tree
+```{r}
+accuracyDT <- postResample(predDT, crosstesting$classe)
+accuracyDT
+```
+Out of sample error
+```{r}
+ooseDT <- 1 - as.numeric(confDT$overall[1])
+ooseDT
+```
+Accuracy and out of sample error values for test dataset using model generalized boosted model
+```{r}
+accuracyGBM <- postResample(predGBM, crosstesting$classe)
+accuracyGBM
+```
+Out of sample error
+```{r}
+ooseGBM <- 1 - as.numeric(confGBM$overall[1])
+ooseGBM
+```
+
+## Apply the selected model to test data
+Out of all random forest model result has better accuracy and small out of sample error
+```{r}
+predTest <- predict(modRF, newdata=testing)
+predTest
+```
